@@ -53,7 +53,7 @@ class TestQdrantService:
         """Test that existing collection is not recreated."""
         mock_client = MagicMock()
         mock_collection = MagicMock()
-        mock_collection.name = "api_endpoints"
+        mock_collection.name = "inventory_items"
         mock_client.get_collections.return_value.collections = [mock_collection]
         mock_client_class.return_value = mock_client
 

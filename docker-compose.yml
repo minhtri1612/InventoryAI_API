@@ -1,21 +1,26 @@
-version: '3.8'
-
 services:
-  # Flask API Service
   api:
     build: .
     ports:
       - "5000:5000"
     environment:
-      - VLLM_URL=http://vllm:8000/v1/completions
-      - VLLM_MODEL=microsoft/phi-2
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - MAX_TOKENS=512
-      - TEMPERATURE=0.1
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5:3b
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      MAX_TOKENS: "512"
+      TEMPERATURE: "0.1"
+      DATABASE_PATH: /data/inventory.db
+      EMBEDDING_MODEL: all-minilm
+      VECTOR_SIZE: "384"
+      SEMANTIC_SCORE_THRESHOLD: "0.5"
+    volumes:
+      - inventory_data:/data
     depends_on:
-      - qdrant
-      - vllm
+      qdrant:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s
@@ -25,7 +30,6 @@ services:
     networks:
       - inventory-network
 
-  # Qdrant Vector Database
   qdrant:
     image: qdrant/qdrant:latest
     ports:
@@ -34,50 +38,44 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
+      QDRANT__SERVICE__GRPC_PORT: "6334"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     networks:
       - inventory-network
 
-  # vLLM Server with Phi-2
-  vllm:
-    image: vllm/vllm-openai:latest
-    ports:
-      - "8000:8000"
+  ollama:
+    image: ollama/ollama:latest
     volumes:
-      - huggingface_cache:/root/.cache/huggingface
-    environment:
-      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:-}
-    command: >
-      --model microsoft/phi-2
-      --host 0.0.0.0
-      --port 8000
-      --max-model-len 2048
-      --dtype float16
-      --trust-remote-code
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - ollama_data:/root/.ollama
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 60s
-      timeout: 30s
-      retries: 5
-      start_period: 120s
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - inventory-network
+
+  ollama-init:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "ollama pull qwen2.5:3b && ollama pull all-minilm"]
     networks:
       - inventory-network
 
 volumes:
   qdrant_data:
-  huggingface_cache:
+  ollama_data:
+  inventory_data:
 
 networks:
   inventory-network:

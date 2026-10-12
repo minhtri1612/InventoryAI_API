@@ -18,8 +18,8 @@ class TestAPIIntegration:
         """Create application for testing."""
         return create_app({
             "TESTING": True,
-            "VLLM_URL": "http://localhost:8000/v1/completions",
-            "VLLM_MODEL": "microsoft/phi-2",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen2.5:3b",
             "QDRANT_HOST": "localhost",
             "QDRANT_PORT": 6333
         })

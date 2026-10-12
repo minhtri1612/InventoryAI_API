@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 class QdrantService:
     """Service class for interacting with Qdrant vector database."""
 
-    COLLECTION_NAME = "api_endpoints"
-    VECTOR_SIZE = 384  # Typical size for small embedding models
+    COLLECTION_NAME = "inventory_items"
+    VECTOR_SIZE = 384  # all-minilm embedding size
 
-    def __init__(self, host: str = "localhost", port: int = 6333):
+    def __init__(self, host: str = "localhost", port: int = 6333, vector_size: int = None):
         """Initialize Qdrant service.
         
         Args:
@@ -25,6 +25,8 @@ class QdrantService:
         """
         self.host = host
         self.port = port
+        if vector_size is not None:
+            self.VECTOR_SIZE = vector_size
         self._client: Optional[QdrantClient] = None
 
     @property
@@ -73,11 +75,19 @@ class QdrantService:
             List of matching documents with scores
         """
         try:
-            results = self.client.search(
-                collection_name=self.COLLECTION_NAME,
-                query_vector=query_vector,
-                limit=limit
-            )
+            if hasattr(self.client, "search"):
+                results = self.client.search(
+                    collection_name=self.COLLECTION_NAME,
+                    query_vector=query_vector,
+                    limit=limit,
+                )
+            else:
+                response = self.client.query_points(
+                    collection_name=self.COLLECTION_NAME,
+                    query=query_vector,
+                    limit=limit,
+                )
+                results = response.points
             return [
                 {
                     "id": hit.id,
@@ -123,6 +133,36 @@ class QdrantService:
             return True
         except Exception as e:
             logger.error(f"Upsert failed: {e}")
+            return False
+
+    def upsert_item(self, item_id: int, vector: List[float], payload: Dict[str, Any]) -> bool:
+        """Store one inventory item vector. The point id is the SQLite item id."""
+        if len(vector) != self.VECTOR_SIZE:
+            logger.error("Embedding size %s does not match %s", len(vector), self.VECTOR_SIZE)
+            return False
+        try:
+            self.ensure_collection()
+            self.client.upsert(
+                collection_name=self.COLLECTION_NAME,
+                points=[
+                    models.PointStruct(id=item_id, vector=vector, payload=payload)
+                ],
+            )
+            return True
+        except Exception as exc:
+            logger.error("Upsert item failed: %s", exc)
+            return False
+
+    def delete_item(self, item_id: int) -> bool:
+        """Remove one inventory vector."""
+        try:
+            self.client.delete(
+                collection_name=self.COLLECTION_NAME,
+                points_selector=models.PointIdsList(points=[item_id]),
+            )
+            return True
+        except Exception as exc:
+            logger.error("Delete item vector failed: %s", exc)
             return False
 
     def check_health(self) -> bool:

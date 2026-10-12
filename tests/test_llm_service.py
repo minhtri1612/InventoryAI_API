@@ -17,16 +17,16 @@ class TestLLMService:
     def llm_service(self):
         """Create LLM service instance for testing."""
         return LLMService(
-            vllm_url="http://localhost:8000/v1/completions",
-            model="microsoft/phi-2",
+            ollama_base_url="http://localhost:11434",
+            model="qwen2.5:3b",
             max_tokens=512,
             temperature=0.1
         )
 
     def test_init(self, llm_service):
         """Test LLM service initialization."""
-        assert llm_service.vllm_url == "http://localhost:8000/v1/completions"
-        assert llm_service.model == "microsoft/phi-2"
+        assert llm_service.ollama_base_url == "http://localhost:11434"
+        assert llm_service.model == "qwen2.5:3b"
         assert llm_service.max_tokens == 512
         assert llm_service.temperature == 0.1
 
@@ -76,9 +76,9 @@ class TestLLMService:
         """Test successful structured response generation."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "choices": [{
-                "text": '{"api_endpoint": "/api/inventory", "api_payload": null, "payload_instruction": "GET request"}'
-            }]
+            "message": {
+                "content": '{"api_endpoint": "/api/inventory", "api_payload": null, "payload_instruction": "GET request"}'
+            }
         }
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
@@ -87,6 +87,8 @@ class TestLLMService:
         
         assert result["api_endpoint"] == "/api/inventory"
         mock_post.assert_called_once()
+        assert mock_post.call_args.args[0] == "http://localhost:11434/api/chat"
+        assert "payload_instruction" in mock_post.call_args.kwargs["json"]["format"]["required"]
 
     @patch("requests.post")
     def test_generate_structured_response_request_error(self, mock_post, llm_service):
@@ -101,7 +103,7 @@ class TestLLMService:
         """Test response generation when LLM returns invalid JSON."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "choices": [{"text": "Not a valid JSON response"}]
+            "message": {"content": "Not a valid JSON response"}
         }
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
@@ -117,6 +119,7 @@ class TestLLMService:
         mock_get.return_value = mock_response
 
         assert llm_service.check_health() is True
+        mock_get.assert_called_once_with("http://localhost:11434/api/tags", timeout=5)
 
     @patch("requests.get")
     def test_check_health_failure(self, mock_get, llm_service):
@@ -133,8 +136,8 @@ class TestLLMServiceOutputValidation:
     def llm_service(self):
         """Create LLM service instance for testing."""
         return LLMService(
-            vllm_url="http://localhost:8000/v1/completions",
-            model="microsoft/phi-2"
+            ollama_base_url="http://localhost:11434",
+            model="qwen2.5:3b"
         )
 
     def test_expected_output_structure_list_items(self, llm_service):
